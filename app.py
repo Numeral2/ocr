@@ -2,14 +2,12 @@ import os
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS  # Import CORS
 from PIL import Image, ImageEnhance, ImageFilter
-import easyocr
+import pytesseract  # Import pytesseract for OCR
 from io import BytesIO
 import requests
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for the entire application
-
-reader = easyocr.Reader(['hr', 'en'])  # Supports Croatian and English
 
 # Function to preprocess the image
 def preprocess_image(image):
@@ -26,8 +24,8 @@ def extract_text_from_image(image):
     preprocessed_image.save(image_bytes, format='PNG')
     image_bytes = image_bytes.getvalue()
     
-    result = reader.readtext(image_bytes)
-    text = "\n".join([entry[1] for entry in result])
+    # Use pytesseract to extract text
+    text = pytesseract.image_to_string(preprocessed_image)
     return text
 
 # Route to serve index.html
