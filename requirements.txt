@@ -1,7 +1,5 @@
-flask==3.1.0
+Flask==3.1.0
 pillow==11.1.0
-easyocr==1.7.2
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
+pytesseract==0.3.13
 requests==2.32.3
+flask-cors==3.1.1
