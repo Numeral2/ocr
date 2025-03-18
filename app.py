@@ -1,34 +1,33 @@
 import os
 from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS  # Import CORS
 from PIL import Image, ImageEnhance, ImageFilter
-from paddleocr import PaddleOCR
+import easyocr
 from io import BytesIO
 import requests
-from waitress import serve  # Import waitress
 
-# Initialize Flask and PaddleOCR with Croatian language
 app = Flask(__name__)
-ocr = PaddleOCR(use_angle_cls=True, lang='hr')  # Croatian language ('hr')
+CORS(app)  # Enable CORS for the entire application
 
-# Function to preprocess the image before extracting text
+reader = easyocr.Reader(['hr', 'en'])  # Supports Croatian and English
+
+# Function to preprocess the image
 def preprocess_image(image):
-    image = image.convert('L')  # Convert image to grayscale
-    image = image.point(lambda p: p > 128 and 255)  # Binary threshold
+    image = image.convert('L')  # Convert to grayscale
     enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(2)  # Enhance contrast
+    image = enhancer.enhance(2)  # Increase contrast
     image = image.filter(ImageFilter.SHARPEN)  # Sharpen the image
     return image
 
-# Function to extract text from an image
+# Function to extract text
 def extract_text_from_image(image):
     preprocessed_image = preprocess_image(image)
     image_bytes = BytesIO()
-    preprocessed_image.save(image_bytes, format='PNG')  # Save image as bytes
+    preprocessed_image.save(image_bytes, format='PNG')
     image_bytes = image_bytes.getvalue()
     
-    # Run OCR on the preprocessed image
-    result = ocr.ocr(image_bytes)
-    text = '\n'.join([word[1][0] for line in result for word in line])  # Extract text
+    result = reader.readtext(image_bytes)
+    text = "\n".join([entry[1] for entry in result])
     return text
 
 # Route to serve index.html
@@ -36,12 +35,13 @@ def extract_text_from_image(image):
 def index():
     return send_from_directory('static', 'index.html')
 
+# Route to process image
 @app.route('/process-image', methods=['POST'])
 def process_image():
     if 'files' not in request.files:
         return jsonify({'error': 'No files part'}), 400
     
-    files = request.files.getlist('files')  # Get all uploaded files
+    files = request.files.getlist('files')
     if not files:
         return jsonify({'error': 'No files selected'}), 400
     
@@ -54,40 +54,29 @@ def process_image():
             image = Image.open(file)
             extracted_text += extract_text_from_image(image) + "\n\n"
         except Exception as e:
-            print(f"Error processing file: {e}")
-            return jsonify({'error': f'Error processing file: {file.filename}'}), 500
+            return jsonify({'error': f'Error processing file: {file.filename}, {str(e)}'}), 500
     
     return jsonify({'extracted_text': extracted_text})
 
-# New route to send extracted text to Make.com
+# Route to send extracted text to Make.com
 @app.route('/send-to-make', methods=['POST'])
 def send_to_make():
     data = request.get_json()
-    text = data.get('text', '')  # Get the extracted text from the request
+    text = data.get('text', '')
     
-    # Check if text is empty
     if not text:
         return jsonify({'error': 'No text provided'}), 400
     
-    make_url = "https://hook.eu2.make.com/y94u5xvkf97g5nym3trgz2j2107nuu12"  # Replace with your Make.com webhook URL
+    make_url = "https://hook.eu2.make.com/y94u5xvkf97g5nym3trgz2j2107nuu12"
     
     try:
-        # Send the extracted text to Make.com via the webhook
         response = requests.post(make_url, json={'text': text})
-        response.raise_for_status()  # Raises an HTTPError if the response code is 4xx/5xx
-
-        # Return the summary (Make.com should send this back)
+        response.raise_for_status()
         summarized_text = response.json().get('summary', ' ')
-        if summarized_text:
-            return jsonify({'summary': summarized_text}), 200
-        else:
-            return jsonify({'error': 'No summary returned from Make.com'}), 500
-
+        return jsonify({'summary': summarized_text}), 200
     except requests.exceptions.RequestException as e:
-        print(f"Failed to send to Make.com: {e}")
-        return jsonify({'error': 'Failed to send to Make.com'}), 500
+        return jsonify({'error': 'Failed to send to Make.com', 'details': str(e)}), 500
 
 if __name__ == '__main__':
-    # Use waitress to serve the app when not deployed on Vercel
-    port = int(os.environ.get('PORT', 10000))  # Default port is 10000
-    serve(app, host='0.0.0.0', port=port)  # Use waitress instead of app.run()
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
